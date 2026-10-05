@@ -1,0 +1,87 @@
+# Vathography Studio
+
+A studio for **vathography**: artworks made from the *depth* of a photograph. An AI model estimates how far away every point of the scene is. You then choose which distances light up: a thin white band picks out one plane, several bands pick out several, and gradients turn distance into mist.
+
+The practice was introduced by Karim Joseph Nassar ([vathography.com](https://vathography.com/), “Introducing Vathography: The Art of a Photograph’s Hidden Volume”). This studio is an independent tool for making your own work in that spirit.
+
+## Run it
+
+It is a static web app with no build step and no server-side code. Serve this folder and open it in Chrome, Edge, Firefox or Safari:
+
+```sh
+python3 -m http.server 8080
+# open http://localhost:8080
+```
+
+(Any static server works, for example `npx http-server .`. Opening `index.html` directly from disk does not work, because browsers block ES modules and workers on `file://`.)
+
+**Online:** the workflow in `.github/workflows/pages.yml` publishes the studio to GitHub Pages on every push to `main`. Enable it once under *Settings → Pages → Source: GitHub Actions*. (Pages on a private repository needs a paid GitHub plan; on a public one it is free.)
+
+Everything runs on your device. Photos and artworks are stored in your browser's local storage (IndexedDB) and are never uploaded. The only network requests are:
+
+- the depth model, downloaded once from Hugging Face and then cached (27 MB for Small on CPU, about 100 MB on GPU);
+- the AI runtime from jsDelivr;
+- fonts from Google Fonts.
+
+## Workflow
+
+1. **Open a photo** (button, drag and drop, or paste). The depth model runs: WebGPU when available, otherwise WebAssembly. The depth is then snapped to the photo's edges at up to 4096 px. You can also start with **Try the demo scene**, which needs no download.
+2. **Pick a look** to start from. Looks place their highlighters on the subjects detected in *your* photo.
+3. **Shape the depth highlighters** (up to 8):
+   - drag the bands in the **depth ruler** under the image (move the middle, resize at the edges, double-click to add);
+   - or use **◎ Pick distance**: click the photo to move the selected highlighter to that distance, Shift+click to add a new one;
+   - each highlighter has a style (*Solid*, *Photo* to reveal the original photograph, or *Line* for one crisp iso-distance line), width, softness, colour, intensity, photo texture, depth glow and blend mode (screen, add, normal, multiply/ink);
+   - **Auto-place on subjects** finds people, boats and trees standing in front of their background; **Strata** makes 3, 5 or 8 evenly spaced planes.
+4. **Atmosphere**: a near → mid → far gradient (mist, night fog, paper, sepia, cyanotype…), optionally mixed with the photo. Add **Relief** (the depth surface lit like a plaster cast), **Contour lines**, and **Finish** (exposure, contrast, vignette, film grain).
+5. **Depth** controls: near/far clip, spread, invert, and *Clean edges*, which hides the thin halos around silhouettes (turn it down to keep them as an outline effect).
+6. **Frame & crop**: aspect presets (Instagram 4:5, Story 9:16, A-paper, 3:2…), crop zoom, the ⬚ Crop tool to drag the composition, and a gallery mat border with extra space at the bottom. **Signature** signs the artwork in the border or on the image.
+7. **Export** (Ctrl+E).
+
+Every photo becomes an artwork in the **Gallery** and is saved automatically. **Save version** (Ctrl+S) branches a copy so you can make several artworks from one photo. **Save current as look** keeps your own looks; looks can be exported and imported as JSON.
+
+## Export
+
+| Tab | What you get |
+| --- | --- |
+| **Print** | A-sizes A4–A0, 30×40 to 100×150 cm, 8×10 to 40×60 in, at 150–360 dpi. PNG 16-bit, TIFF 16/8-bit, PNG 8-bit or JPEG, all tagged with the DPI. The dialog warns when the artwork and paper proportions differ, and can match the frame to the paper. |
+| **Social** | Instagram 4:5 / 1:1 (1080 and 2160), Story/Reel/TikTok 9:16, X/LinkedIn, 4K and phone wallpapers. Choosing a format sets the frame so you can compose for it. |
+| **Custom** | Any long edge up to 60 000 px. |
+| **Video** | A depth sweep (a plane travelling through space), drift or breathe animation, as MP4 (Chrome/Edge/Safari) or WebM, up to 4K at 30/60 fps, for Reels, TikTok and Shorts. |
+| **Depth & look** | The depth map as a 16-bit PNG (white = near), for Photoshop lens blur, Blender or After Effects, and the look as JSON. |
+
+Large prints are rendered in tiles and streamed into the file, so an A0 print at 300 dpi (≈ 9900 × 14000 px, 140 MP) does not need a giant canvas. In Chrome and Edge, *Write directly to disk* streams the file to disk as it is written.
+
+Every effect is defined in artwork units, not pixels, so a 1080 px post and a 14 000 px print show the same image. Bands, lines, gradients and grain are rendered natively at print resolution and stay crisp at any size. Photo texture inside the bands is upscaled with bicubic interpolation when the print needs more pixels than the photo has. The print tab reports the photo's native ppi for the chosen size.
+
+## Best depth for big prints
+
+The in-browser model is fast and good. For the finest depth on large prints, compute a full-resolution depth map with Marigold on a computer with a GPU:
+
+```sh
+pip install torch diffusers transformers accelerate pillow numpy
+python tools/marigold_depth.py photo.jpg --ensemble 10 --res 1024
+```
+
+Then use **Depth ▸ Import depth map…** (or drop `photo_depth16.png` onto the studio). Depth maps from other tools work too: 8 or 16-bit PNG, white = near. If near and far come out swapped, use **Invert**.
+
+## Shortcuts
+
+| Key | Action |
+| --- | --- |
+| `O` / `G` | Open photo / Gallery |
+| `Ctrl+Z`, `Ctrl+Shift+Z` | Undo / redo |
+| `Ctrl+S` / `Ctrl+E` | Save version / Export |
+| `A` `\` `D` `C` | Artwork / photo / depth / split view |
+| `H` `P` `F` | Pan, pick distance, crop tool |
+| `0` / `1` | Fit / 1:1 zoom (mouse wheel or pinch zooms, drag pans) |
+| `N` / `Delete` | Add / delete highlighter |
+| `[` `]` (Shift for bigger steps) | Nudge the selected highlighter nearer / farther (preview focused) |
+| `Space` | Play / stop the animation preview |
+
+## Notes
+
+- Needs WebGL2. AI depth needs WebAssembly (all current browsers) and uses WebGPU when present. HEIC photos must be converted to JPEG first in browsers that cannot decode HEIC.
+- Code: `js/renderer.js` (WebGL engine), `js/depth.js` (AI depth), `js/refine.worker.js` (edge-aware upsampling), `js/codecs.js` (streaming PNG/TIFF), `js/export.js`, `js/app.js` (UI).
+- Tests: `npm install && npm test` runs a headless-browser smoke test (demo scene, every look, every export format, undo/redo). CI runs it on every push and pull request.
+
+Depth models: [Depth Anything V2](https://github.com/DepthAnything/Depth-Anything-V2) via [transformers.js](https://github.com/huggingface/transformers.js), and [Marigold](https://marigoldmonodepth.github.io/) (optional, offline).
