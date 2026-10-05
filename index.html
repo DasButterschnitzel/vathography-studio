@@ -7,6 +7,11 @@
 <meta name="description" content="Turn photographs into vathographs: artworks drawn from the depth of a scene, with multiple depth highlighters, print-ready exports and social formats.">
 <meta name="theme-color" content="#0b0b0c">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Vathography">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&family=Inter:wght@400;500;600&family=Playfair+Display:ital@0;1&family=Space+Grotesk:wght@400;500&family=Caveat&display=swap" rel="stylesheet">
@@ -101,6 +106,16 @@
     <header><h2>Gallery</h2><span id="usage" class="muted"></span><button class="x" id="galleryClose" aria-label="Close">×</button></header>
     <div id="galleryGrid" class="gallery"></div>
   </div>
+</dialog>
+
+<dialog id="askDlg" class="dlg narrow">
+  <form method="dialog" class="dlg-inner">
+    <header><h2 id="askTitle">Name</h2><button type="button" class="x" data-close aria-label="Close">×</button></header>
+    <div class="tab-body">
+      <input id="askInput" class="ask-input" required spellcheck="false" autocomplete="off">
+      <div class="dlg-actions"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary" value="ok">Save</button></div>
+    </div>
+  </form>
 </dialog>
 
 <div id="busy" class="busy" hidden>

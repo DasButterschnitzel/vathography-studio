@@ -21,9 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Collect site files
-        run: |
-          mkdir _site
-          cp -r index.html styles.css icon.svg js _site/
+        run: node apps/copy-web.mjs _site
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

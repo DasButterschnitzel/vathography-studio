@@ -696,7 +696,7 @@ window.addEventListener('paste', (e) => {
 window.addEventListener('keydown', (e) => {
   const tag = e.target.tagName;
   if ((tag === 'INPUT' && !['range', 'checkbox', 'radio', 'color'].includes(e.target.type)) || tag === 'TEXTAREA' || tag === 'SELECT') return;
-  if ($('exportDlg').open || $('galleryDlg').open) return;
+  if ($('exportDlg').open || $('galleryDlg').open || $('askDlg').open) return;
   const mod = e.ctrlKey || e.metaKey;
   const k = e.key.toLowerCase();
   if (mod && k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
@@ -1137,8 +1137,19 @@ async function loadLookThumbs() {
     if (img) img.src = url;
   }
 }
+// in-page replacement for prompt(), which desktop (Electron) builds do not support
+function askText(title, value = '') {
+  const dlg = $('askDlg'), input = $('askInput');
+  $('askTitle').textContent = title;
+  input.value = value;
+  dlg.returnValue = '';
+  for (const b of dlg.querySelectorAll('[data-close]')) b.onclick = () => dlg.close('');
+  dlg.showModal();
+  input.select();
+  return new Promise((resolve) => { dlg.onclose = () => resolve(dlg.returnValue === 'ok' ? input.value.trim() : null); });
+}
 async function saveCurrentLook() {
-  const name = prompt('Name this look:', 'My look');
+  const name = await askText('Name this look', 'My look');
   if (!name) return;
   const s = JSON.parse(snapshot());
   const look = { id: newId(), name, s: { depth: s.depth, base: s.base, relief: s.relief, contours: s.contours, finish: s.finish, highlighters: s.highlighters } };
@@ -1335,7 +1346,7 @@ function renderExport() {
       busy('Encoding depth map…');
       const inv = new Float32Array(app.depth.data.length);
       for (let i = 0; i < inv.length; i++) inv[i] = 1 - remap(app.depth.data[i]);
-      download(await depthToPNG(inv, app.depth.w, app.depth.h), `${fileBase()}_depth16.png`);
+      await download(await depthToPNG(inv, app.depth.w, app.depth.h), `${fileBase()}_depth16.png`);
       idle();
     });
     body.append(b1);
@@ -1343,7 +1354,7 @@ function renderExport() {
     const b2 = el('div', 'btns');
     button(b2, 'Download look (.json)', () => {
       const s = JSON.parse(snapshot());
-      download(new Blob([JSON.stringify({ name: app.project.name, app: 'Vathography Studio', settings: s }, null, 2)], { type: 'application/json' }), `${fileBase()}_look.json`);
+      download(new Blob([JSON.stringify({ name: app.project.name, app: 'Vathography Studio', settings: s }, null, 2)], { type: 'application/json' }), `${fileBase()}_look.json`).catch((e) => toast('Saving failed: ' + e.message, true));
     });
     button(b2, 'Import look…', () => $('lookInput').click());
     body.append(b2);
@@ -1373,7 +1384,7 @@ async function doExport(w, h, format, dpi, name) {
       text: { Software: 'Vathography Studio', Title: app.project.name, 'vathography:settings': snapshot() },
       onProgress: (p) => busy(`Rendering ${w.toLocaleString()} × ${h.toLocaleString()} px… ${Math.round(p * 100)}%`, p, ac),
     });
-    if (blob) download(blob, filename);
+    if (blob) await download(blob, filename);
     toast(`Exported ${filename} (${w}×${h}) in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
   } catch (e) {
     if (e.name === 'AbortError') toast('Export cancelled');
@@ -1396,7 +1407,7 @@ async function doVideo(w, h) {
     await updateSignature(app.s.signature.size / 100 * h * 1.3);
     busy('Recording video…', 0, ac);
     const blob = await recordVideo(renderer, app.s, layout(), app.s.anim, { w, h, fps: exp.fps, bitrate: w * h * exp.fps * 0.35, signal: ac.signal, onProgress: (p) => busy(`Recording video… ${Math.round(p * 100)}%`, p, ac) });
-    download(blob, `${fileBase()}_${w}x${h}.${blob.type.includes('mp4') ? 'mp4' : 'webm'}`);
+    await download(blob, `${fileBase()}_${w}x${h}.${blob.type.includes('mp4') ? 'mp4' : 'webm'}`);
     toast(blob.type.includes('mp4') ? 'Video saved (MP4)' : 'Video saved (WebM). Most platforms accept it; convert to MP4 if needed.');
   } catch (e) {
     if (e.name === 'AbortError') toast('Recording cancelled'); else { console.error(e); toast('Recording failed: ' + e.message, true); }
@@ -1428,5 +1439,9 @@ renderPanel();
 renderRecent();
 store.persist();
 window.addEventListener('beforeunload', () => { if (app.project) saveProject(); });
+// installable app and offline start (not inside the Android shell, which serves the files itself)
+if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol) && !window.Capacitor) navigator.serviceWorker.register('sw.js').catch((e) => console.warn('Service worker', e));
+// photos opened with the installed app from the file manager
+window.launchQueue?.setConsumer(async (p) => { const f = await p.files?.[0]?.getFile(); if (f) openPhotoFile(f); });
 // test hook
 window.__vath = { app, renderer, openDemo, openPhotoFile, exportImage: (o) => exportImage(renderer, app.s, layout(), o), layout, commit, renderPanel, importDepthMap };

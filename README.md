@@ -4,7 +4,17 @@ A studio for **vathography**: artworks made from the *depth* of a photograph. An
 
 The practice was introduced by Karim Joseph Nassar ([vathography.com](https://vathography.com/), “Introducing Vathography: The Art of a Photograph’s Hidden Volume”). This studio is an independent tool for making your own work in that spirit.
 
-## Run it
+## Use it
+
+| | |
+| --- | --- |
+| **In the browser** | **[dasbutterschnitzel.github.io/vathography-studio](https://dasbutterschnitzel.github.io/vathography-studio/)**: open and start. Chrome and Edge offer *Install app* in the address bar (desktop) or the menu (Android), which adds it to the start menu or home screen and lets it start offline. On iPhone/iPad: *Share → Add to Home Screen*. |
+| **Android app** | **[Vathography-Studio.apk](https://github.com/DasButterschnitzel/vathography-studio/releases/latest/download/Vathography-Studio.apk)**: download on the phone, open it and allow installing from this source once. Exports open the share sheet (Photos, Drive, Files…) and are also saved in *Documents/Vathography*. |
+| **Windows app** | **[Installer](https://github.com/DasButterschnitzel/vathography-studio/releases/latest/download/Vathography-Studio-Setup.exe)** or **[portable .exe](https://github.com/DasButterschnitzel/vathography-studio/releases/latest/download/Vathography-Studio-Portable.exe)** (runs without installing). The app is not code-signed, so SmartScreen may warn: *More info → Run anyway*. |
+
+All builds are on the **[Releases](https://github.com/DasButterschnitzel/vathography-studio/releases)** page. GitHub Actions makes them on every push to `main` (`.github/workflows/apps.yml`, release *latest*); a tag such as `v1.1.0` makes a versioned release. The web version is published by `.github/workflows/pages.yml`; enable it once under *Settings → Pages → Source: GitHub Actions*.
+
+### Run it locally
 
 It is a static web app with no build step and no server-side code. Serve this folder and open it in Chrome, Edge, Firefox or Safari:
 
@@ -15,9 +25,16 @@ python3 -m http.server 8080
 
 (Any static server works, for example `npx http-server .`. Opening `index.html` directly from disk does not work, because browsers block ES modules and workers on `file://`.)
 
-**Online:** the workflow in `.github/workflows/pages.yml` publishes the studio to GitHub Pages on every push to `main`. Enable it once under *Settings → Pages → Source: GitHub Actions*. (Pages on a private repository needs a paid GitHub plan; on a public one it is free.)
+### Build the apps yourself
 
-Everything runs on your device. Photos and artworks are stored in your browser's local storage (IndexedDB) and are never uploaded. The only network requests are:
+The apps wrap the same files; nothing is changed for them.
+
+- **Windows / macOS / Linux** (Electron, `apps/desktop`): `npm ci`, then `npm start` to run it, or `npm run dist:win` (also `dist:mac`, `dist:linux`). Output in `apps/desktop/dist/`.
+- **Android** (Capacitor, `apps/android`, needs JDK 21 and the Android SDK): `npm ci`, `node prepare.mjs`, then `cd android && ./gradlew assembleRelease`. Output in `android/app/build/outputs/apk/release/`.
+
+Android signing: without secrets, the APK is signed with the public test key `apps/android/test.keystore`. That is fine for your own phone, and new builds install over old ones, but anyone could sign an APK with that key. For a private key, create one (`keytool -genkeypair -keystore release.keystore -alias vathography -keyalg RSA -keysize 2048 -validity 36500`) and add the repository secrets `ANDROID_KEYSTORE_BASE64` (the file, base64-encoded), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`. Switching keys means uninstalling the old app once, which deletes its gallery, so export what you want to keep first.
+
+Everything runs on your device. Photos and artworks are stored in your browser's (or the app's) local storage (IndexedDB) and are never uploaded. The only network requests are:
 
 - the depth model, downloaded once from Hugging Face and then cached (27 MB for Small on CPU, about 100 MB on GPU);
 - the AI runtime from jsDelivr;

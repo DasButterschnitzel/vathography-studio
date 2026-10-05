@@ -4,7 +4,8 @@ A browser tool for photographers that turns a photo into a *vathograph*: an artw
 
 ## Ground rules
 
-- **Static site, no build step, no framework.** Plain ES modules, HTML and CSS. Do not add bundlers, TypeScript or UI libraries.
+- **Static site, no build step, no framework.** Plain ES modules, HTML and CSS. Do not add bundlers, TypeScript or UI libraries. The Android and desktop apps in `apps/` only wrap the same files; keep app-specific code tiny and feature-detected (`window.Capacitor`).
+- **No `prompt()`**: Electron does not support it; use `askText()` in `app.js`. `confirm()` is fine.
 - **The only runtime dependency** is transformers.js, imported from jsDelivr with a pinned version in `js/depth.js`. Fonts come from Google Fonts. Everything else is in this repo.
 - **Everything stays on the user's device.** No analytics, no uploads, no backend. Projects live in IndexedDB.
 - The UI text is English; the owner may write to you in German.
@@ -27,6 +28,10 @@ A browser tool for photographers that turns a photo into a *vathograph*: an artw
 | `js/store.js` | IndexedDB stores: `projects` (metadata, settings, thumbnail), `assets` (`<id>:photo`, `<id>:raw` as a 16-bit PNG), `looks`. |
 | `js/demo.js` | Procedural demo landscape with an exact depth map, so the app works without a photo or the model download. |
 | `tools/smoke.mjs`, `tools/serve.mjs` | Headless Playwright smoke test and a tiny static server. |
+| `manifest.webmanifest`, `sw.js`, `icons/` | Installable web app: manifest, service worker (own files network-first, CDN cache-first, Hugging Face untouched), PNG icons rendered by `tools/icons.mjs`. |
+| `apps/copy-web.mjs` | Copies the runtime files (its `FILES` list) into `_site` for Pages or `www/` for the native shells. |
+| `apps/desktop/` | Electron shell for Windows/macOS/Linux: `main.cjs` serves the files from an `app://` origin. Built with electron-builder. |
+| `apps/android/` | Capacitor shell for Android. `prepare.mjs` generates `android/` (not committed) and applies icons (`res/`), version and signing. Exports go through `saveNative()` in `export.js` (Filesystem + Share plugins via `Capacitor.nativePromise`, no bundler). |
 | `tools/marigold_depth.py` | Offline full-resolution depth with Marigold, for large prints. Output is a 16-bit PNG, white = near. |
 
 ## Key conventions
@@ -55,8 +60,10 @@ npm test               # headless smoke test, screenshots in test-output/
 ## CI and deploy
 
 - `.github/workflows/test.yml` runs `npm test` on every push and pull request and uploads the screenshots.
-- `.github/workflows/pages.yml` publishes `index.html`, `styles.css`, `icon.svg` and `js/` to GitHub Pages on pushes to `main`. Pages must be enabled once under *Settings → Pages → Source: GitHub Actions*. If you add a top-level runtime file, add it to the copy step there.
+- `.github/workflows/pages.yml` publishes the files listed in `apps/copy-web.mjs` to GitHub Pages on pushes to `main`. Pages must be enabled once under *Settings → Pages → Source: GitHub Actions*. If you add a top-level runtime file, add it to `FILES` in `apps/copy-web.mjs` (and to `SHELL` in `sw.js` if it is needed offline).
+- `.github/workflows/apps.yml` builds the Android APK (Capacitor) and the Windows installer and portable exe (Electron) on every push and pull request. Pushes to `main` replace the release `latest`; tags `v*` make a versioned release. Asset names are stable, so `releases/latest/download/<name>` links keep working.
+- Run the icon script after changing the icon: `node tools/icons.mjs`.
 
 ## Ideas not built yet
 
-Features to consider next: a brush to paint depth corrections, HEIC import, a batch export of several sizes in one go, a print-preview mode with paper texture, a gallery backup as a zip file, and an ICC profile in exports.
+Features to consider next: an iOS build, a brush to paint depth corrections, HEIC import, a batch export of several sizes in one go, a print-preview mode with paper texture, a gallery backup as a zip file, and an ICC profile in exports.
