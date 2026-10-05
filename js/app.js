@@ -190,7 +190,7 @@ vp.addEventListener('pointerdown', (e) => {
   } else if (tool === 'frame') {
     drag = { kind: 'frame', p, cx: app.s.frame.cx, cy: app.s.frame.cy };
   } else {
-    drag = { kind: 'pan', x: e.clientX, y: e.clientY, ox: v.ox, oy: v.oy, t0: performance.now() };
+    drag = { kind: 'pan', x: e.clientX, y: e.clientY, ox: v.ox, oy: v.oy, t0: e.timeStamp };
   }
   vp.classList.add('dragging');
 });
@@ -232,9 +232,9 @@ const endDrag = (e) => {
     clearTimeout(drag.timer);
     if (drag.d != null && e.type === 'pointerup') { pickDepth(drag.d, false); commit(); renderPanel(); }
   } else if (drag && (drag.kind === 'pick' || drag.kind === 'frame' || drag.kind === 'cropzoom')) { commit(); renderPanel(); }
-  else if (drag?.kind === 'pan' && touch && e.type === 'pointerup' && performance.now() - drag.t0 < 300 && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 10) {
-    // double tap: zoom in where tapped, or back to fit
-    const now = performance.now(), r = vp.getBoundingClientRect();
+  else if (drag?.kind === 'pan' && touch && e.type === 'pointerup' && e.timeStamp - drag.t0 < 300 && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 10) {
+    // double tap: zoom in where tapped, or back to fit (timed by the touch events, not by when they are handled)
+    const now = e.timeStamp, r = vp.getBoundingClientRect();
     if (now - lastTap.t < 320 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 40) {
       if (app.view.fitted) zoomTo(app.view.scale * 2.5, e.clientX - r.left, e.clientY - r.top); else fit();
       lastTap.t = 0;
@@ -405,7 +405,7 @@ function showHoverLine(d) {
     if (rd.kind === 'empty') {
       // double tap on free space adds a band there (mouse: dblclick)
       if (e.pointerType !== 'mouse' && e.type === 'pointerup') {
-        const now = performance.now();
+        const now = e.timeStamp;
         if (now - lastTapT < 350) { pickDepth(xToD(e), true); commit(); lastTapT = 0; } else lastTapT = now;
       }
       rd = null;

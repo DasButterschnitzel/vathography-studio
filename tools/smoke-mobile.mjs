@@ -15,6 +15,7 @@ const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--ena
 const ctx = await browser.newContext({ ...devices['Pixel 7'] });
 const page = await ctx.newPage();
 const cdp = await ctx.newCDPSession(page);
+if (process.env.SLOW) await cdp.send('Emulation.setCPUThrottlingRate', { rate: +process.env.SLOW });
 const errors = [];
 page.on('pageerror', (e) => errors.push('page error: ' + e.message));
 page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push('console: ' + m.text()); });
@@ -31,6 +32,11 @@ async function gesture(from, to, steps = 8, hold = 0) {
   await touch('touchEnd', []);
 }
 const tapAt = async (x, y, hold = 0) => { await touch('touchStart', [[x, y]]); await wait(hold || 40); await touch('touchEnd', []); };
+// double tap with fixed event timestamps, so a slow CI renderer cannot stretch the gap between the taps
+async function doubleTap(x, y) {
+  const t = Date.now() / 1000;
+  for (const [type, dt] of [['touchStart', 0], ['touchEnd', 0.05], ['touchStart', 0.15], ['touchEnd', 0.2]]) await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 0 }], timestamp: t + dt });
+}
 const S = () => page.evaluate(() => ({ hl: __vath.app.s.highlighters.map((h) => ({ c: h.center, w: h.width })), sel: __vath.app.sel, scale: __vath.app.view.scale, fitted: __vath.app.view.fitted, open: !document.getElementById('sheet').classList.contains('closed'), mobile: document.documentElement.classList.contains('is-mobile') }));
 
 try {
@@ -78,7 +84,7 @@ try {
   await wait(200);
   s2 = await S();
   check(s2.scale > s.scale * 2 && !s2.fitted, `pinch zooms (${(s2.scale / s.scale).toFixed(1)}×)`);
-  await tapAt(cx, cy); await wait(60); await tapAt(cx, cy);
+  await doubleTap(cx, cy);
   await wait(200);
   check((await S()).fitted, 'double tap fits again');
 
@@ -106,7 +112,7 @@ try {
   let free = 0.5, gap = 0;
   for (let t = 0.02; t < 0.98; t += 0.01) { const g = Math.min(...s3.hl.map((h) => Math.abs(h.c - t))); if (g > gap) { gap = g; free = t; } }
   const ex = rb.x + rb.width * free;
-  await tapAt(ex, by); await wait(60); await tapAt(ex, by);
+  await doubleTap(ex, by);
   await wait(200);
   check((await S()).hl.length === n0 + 1, 'double tap on the ruler adds a band');
 
