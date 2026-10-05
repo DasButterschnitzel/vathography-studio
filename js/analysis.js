@@ -18,7 +18,8 @@ export function histogram(data, w, h, remap, bins = 256) {
 //    rather than receding ground or the far background
 //  - figures: such surfaces that also stand in front of something farther
 //    above them (a person against the landscape, a boat on the water)
-// Figures are proposed first even when they are small.
+// Figures are proposed first even when they are small. The result is sorted
+// by distance; `.main` is the strongest proposal (what one-plane looks use).
 export function subjectPeaks(data, w, h, remap, n = 3, bins = 256) {
   const surf = new Float32Array(bins), fig = new Float32Array(bins);
   const step = Math.max(1, Math.floor(Math.sqrt(w * h / 250000)));
@@ -50,7 +51,12 @@ export function subjectPeaks(data, w, h, remap, n = 3, bins = 256) {
     if (out.every((q) => Math.abs(q - p) > 0.06)) out.push(p);
   }
   if (out.length < n) for (const p of findPeaks(histogram(data, w, h, remap, bins), n)) if (out.length < n && out.every((q) => Math.abs(q - p) > 0.06)) out.push(p);
-  return out.slice(0, n).sort((a, b) => a - b);
+  const res = out.slice(0, n).sort((a, b) => a - b);
+  // main subject: most surface (central, near, facing the camera), figures count extra
+  const sS = smooth(surf, bins / 96), sF = smooth(fig, bins / 96);
+  const score = (d) => { const b = Math.min(bins - 1, Math.floor(d * bins)); return (sS[b] + 1.5 * sF[b]) * (d > 0.9 ? 0.3 : 1); };
+  res.main = res.reduce((a, d) => (a == null || score(d) > score(a) ? d : a), null) ?? 0.35;
+  return res;
 }
 
 function smooth(hist, sigma) {

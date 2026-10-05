@@ -4,7 +4,8 @@ A browser tool for photographers that turns a photo into a *vathograph*: an artw
 
 ## Ground rules
 
-- **Static site, no build step, no framework.** Plain ES modules, HTML and CSS. Do not add bundlers, TypeScript or UI libraries.
+- **Static site, no build step, no framework.** Plain ES modules, HTML and CSS. Do not add bundlers, TypeScript or UI libraries. The Android and desktop apps in `apps/` only wrap the same files; keep app-specific code tiny and feature-detected (`window.Capacitor`).
+- **No `prompt()`**: Electron does not support it; use `askText()` in `app.js`. `confirm()` is fine.
 - **The only runtime dependency** is transformers.js, imported from jsDelivr with a pinned version in `js/depth.js`. Fonts come from Google Fonts. Everything else is in this repo.
 - **Everything stays on the user's device.** No analytics, no uploads, no backend. Projects live in IndexedDB.
 - The UI text is English; the owner may write to you in German.
@@ -26,10 +27,17 @@ A browser tool for photographers that turns a photo into a *vathograph*: an artw
 | `js/export.js` | Tiled export pipeline, print and social presets, animation (`animState()`), MediaRecorder video. |
 | `js/store.js` | IndexedDB stores: `projects` (metadata, settings, thumbnail), `assets` (`<id>:photo`, `<id>:raw` as a 16-bit PNG), `looks`. |
 | `js/demo.js` | Procedural demo landscape with an exact depth map, so the app works without a photo or the model download. |
-| `tools/smoke.mjs`, `tools/serve.mjs` | Headless Playwright smoke test and a tiny static server. |
+| `tools/smoke.mjs`, `tools/smoke-mobile.mjs`, `tools/serve.mjs` | Headless Playwright smoke tests (desktop; phone with multi-touch through CDP) and a tiny static server. |
+| `manifest.webmanifest`, `sw.js`, `icons/` | Installable web app: manifest, service worker (own files network-first, CDN cache-first, Hugging Face untouched), PNG icons rendered by `tools/icons.mjs`. |
+| `apps/copy-web.mjs` | Copies the runtime files (its `FILES` list) into `_site` for Pages or `www/` for the native shells. |
+| `apps/desktop/` | Electron shell for Windows/macOS/Linux: `main.cjs` serves the files from an `app://` origin. Built with electron-builder. |
+| `apps/android/` | Capacitor shell for Android. `prepare.mjs` generates `android/` (not committed) and applies icons (`res/`), version and signing. Exports go through `saveNative()` in `export.js` (Filesystem + Share plugins via `Capacitor.nativePromise`, no bundler). |
 | `tools/marigold_depth.py` | Offline full-resolution depth with Marigold, for large prints. Output is a 16-bit PNG, white = near. |
 
 ## Key conventions
+
+- **Phone layout:** `html.is-mobile` is set in `applyMode()` from one media query (narrow, or a short touch screen in landscape); all phone CSS hangs off that class, landscape adds `html.land`. The panel is the same `renderPanel()`, filtered to the active tab (`TABS` in `app.js`) inside a bottom sheet. Touch gestures live in the viewport and ruler pointer handlers (`pointerType !== 'mouse'`); keep mouse behaviour unchanged. Dialogs open through `showDialog()` so the Android back button (App plugin → `history.back()`) closes them.
+- **Preview resolution** is capped at 2× (`dpr()` in `app.js`); exports are unaffected.
 
 - **Depth convention:** inside the app, depth is a `Float32Array` with **0 = nearest, 1 = farthest**. Imported maps follow the common white = near convention and are inverted on import. The depth-map export writes white = near again.
 - **Remap:** `depth.near/far/gamma/invert` turn raw depth into the "distance" `d` that every effect and the ruler use. The JS `remap()` in `app.js` and `remap()` in the shader must stay identical.
@@ -47,7 +55,7 @@ npm run serve          # http://127.0.0.1:8080 (or: python3 -m http.server 8080)
 npm test               # headless smoke test, screenshots in test-output/
 ```
 
-- The smoke test needs no network: it uses the demo scene. It covers looks, the pick tool, ruler drag, undo/redo, every export format, a tiled 5000 px export, the gallery round trip and the export dialog. Keep it passing, and extend it when you add features.
+- The smoke tests need no network: they use the demo scene. The desktop one covers looks, the pick tool, ruler drag, undo/redo, every export format, a tiled 5000 px export, the gallery round trip, the export dialog, saving a look and the offline start. The phone one (Pixel 7) covers the sheet and tabs, the back button and every touch gesture. Keep them passing, and extend them when you add features.
 - In Claude Code cloud sessions Chromium is pre-installed: run tests with `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npm test` and never run `playwright install`.
 - The AI depth path downloads a model from Hugging Face. To check it, open a real photo (for example with `page.setInputFiles('#fileInput', …)`); on WASM the first run downloads about 27 MB.
 - Check visual changes with screenshots (Playwright) before calling them done.
@@ -55,8 +63,10 @@ npm test               # headless smoke test, screenshots in test-output/
 ## CI and deploy
 
 - `.github/workflows/test.yml` runs `npm test` on every push and pull request and uploads the screenshots.
-- `.github/workflows/pages.yml` publishes `index.html`, `styles.css`, `icon.svg` and `js/` to GitHub Pages on pushes to `main`. Pages must be enabled once under *Settings → Pages → Source: GitHub Actions*. If you add a top-level runtime file, add it to the copy step there.
+- `.github/workflows/pages.yml` publishes the files listed in `apps/copy-web.mjs` to GitHub Pages on pushes to `main`. Pages must be enabled once under *Settings → Pages → Source: GitHub Actions*. If you add a top-level runtime file, add it to `FILES` in `apps/copy-web.mjs` (and to `SHELL` in `sw.js` if it is needed offline).
+- `.github/workflows/apps.yml` builds the Android APK (Capacitor) and the Windows installer and portable exe (Electron) on every push and pull request. Pushes to `main` replace the release `latest`; tags `v*` make a versioned release. Asset names are stable, so `releases/latest/download/<name>` links keep working.
+- Run the icon script after changing the icon: `node tools/icons.mjs`.
 
 ## Ideas not built yet
 
-Features to consider next: a brush to paint depth corrections, HEIC import, a batch export of several sizes in one go, a print-preview mode with paper texture, a gallery backup as a zip file, and an ICC profile in exports.
+Features to consider next: an iOS build, a brush to paint depth corrections, HEIC import, a batch export of several sizes in one go, a print-preview mode with paper texture, a gallery backup as a zip file, and an ICC profile in exports.

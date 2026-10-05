@@ -31,10 +31,21 @@ async function backend() {
   return { device: 'wasm', dtype: 'q8' };
 }
 
+// mobile networks drop requests: retry downloads a few times before giving up
+async function retry(fn, onProgress, n = 3) {
+  for (let i = 1; ; i++) {
+    try { return await fn(i); } catch (e) {
+      if (i >= n || !/fetch|network|load|abort/i.test(e?.message || String(e))) throw e;
+      onProgress?.({ stage: `Connection problem, retrying (${i}/${n - 1})…` });
+      await new Promise((r) => setTimeout(r, 1500 * i));
+    }
+  }
+}
+
 async function getModel(key, onProgress) {
   if (!lib) {
     onProgress?.({ stage: 'Loading AI runtime…' });
-    lib = await import(TRANSFORMERS);
+    lib = await retry((i) => import(TRANSFORMERS + (i > 1 ? `?retry=${i}` : '')), onProgress); // a failed import is cached per URL
     lib.env.allowLocalModels = false;
   }
   if (loaded.has(key)) return loaded.get(key);
@@ -50,12 +61,12 @@ async function getModel(key, onProgress) {
   };
   let model;
   try {
-    model = await lib.AutoModel.from_pretrained(MODELS[key].id, { device: be.device, dtype: be.dtype, progress_callback });
+    model = await retry(() => lib.AutoModel.from_pretrained(MODELS[key].id, { device: be.device, dtype: be.dtype, progress_callback }), onProgress);
   } catch (e) {
     if (be.device !== 'webgpu') throw e;
     console.warn('WebGPU failed, falling back to WebAssembly', e);
     be.device = 'wasm'; be.dtype = 'q8';
-    model = await lib.AutoModel.from_pretrained(MODELS[key].id, { device: 'wasm', dtype: 'q8', progress_callback });
+    model = await retry(() => lib.AutoModel.from_pretrained(MODELS[key].id, { device: 'wasm', dtype: 'q8', progress_callback }), onProgress);
   }
   const entry = { model, backend: be };
   loaded.set(key, entry);

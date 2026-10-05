@@ -108,7 +108,8 @@ async function setJpegDpi(blob, dpi) {
   return new Blob([buf], { type: 'image/jpeg' });
 }
 
-export function download(blob, name) {
+export async function download(blob, name) {
+  if (window.Capacitor?.isNativePlatform?.()) return saveNative(blob, name);
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = name;
@@ -116,6 +117,25 @@ export function download(blob, name) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+}
+
+// Android app: the WebView cannot download, so write the file (in chunks, the bridge
+// passes base64 strings) to Documents/Vathography, or the app cache where that is not
+// allowed, then open the share sheet to send it to Photos, Drive, …
+async function saveNative(blob, name) {
+  const cap = window.Capacitor, CH = 3 << 20;
+  const b64 = (b) => new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result.slice(r.result.indexOf(',') + 1)); r.onerror = () => reject(r.error); r.readAsDataURL(b); });
+  const write = async (directory, path) => {
+    let uri;
+    for (let o = 0; o === 0 || o < blob.size; o += CH) {
+      const r = await cap.nativePromise('Filesystem', o ? 'appendFile' : 'writeFile', { path, directory, data: await b64(blob.slice(o, o + CH)), recursive: true });
+      uri = r?.uri || uri;
+    }
+    return uri || (await cap.nativePromise('Filesystem', 'getUri', { path, directory })).uri;
+  };
+  let uri;
+  try { uri = await write('DOCUMENTS', `Vathography/${name}`); } catch { uri = await write('CACHE', name); }
+  try { await cap.nativePromise('Share', 'share', { title: name, files: [uri], dialogTitle: 'Save or share' }); } catch { /* share sheet dismissed */ }
 }
 
 // ---- animation ------------------------------------------------------------

@@ -14,6 +14,8 @@ const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 const fmt2 = (v) => (+v).toFixed(2), fmt3 = (v) => (+v).toFixed(3), fmt0 = (v) => String(Math.round(v)), fmtDeg = (v) => Math.round(v) + '°';
 const DEFAULTS = defaultSettings(), HL_DEF = newHighlighter();
+// preview resolution: phones report 3× and more, which costs a lot of fill rate for no visible gain
+const dpr = () => Math.min(devicePixelRatio || 1, 2);
 
 // ---- state ------------------------------------------------------------------
 const app = {
@@ -76,10 +78,10 @@ function requestRender() {
 function draw() {
   rafPending = false;
   if (!app.photo || app.recording) return;
-  const L = layout(), v = app.view, dpr = devicePixelRatio || 1;
+  const L = layout(), v = app.view;
   const extra = app.playing ? animState(app.s, app.s.anim, (performance.now() - app.playT0) / 1000) : {};
   renderer.render(app.s, L, {
-    origin: [-v.ox / v.scale, -v.oy / v.scale], px: 1 / (v.scale * dpr),
+    origin: [-v.ox / v.scale, -v.oy / v.scale], px: 1 / (v.scale * dpr()),
     mode: v.mode === 3 ? 0 : v.mode, split: v.mode === 3 ? v.split * L.artW : -1, ...extra,
   });
   if (app.playing) requestRender();
@@ -87,8 +89,8 @@ function draw() {
 }
 
 function resizeCanvas() {
-  const vp = $('viewport'), c = $('gl'), dpr = devicePixelRatio || 1;
-  const w = Math.max(1, Math.round(vp.clientWidth * dpr)), h = Math.max(1, Math.round(vp.clientHeight * dpr));
+  const vp = $('viewport'), c = $('gl'), r = dpr();
+  const w = Math.max(1, Math.round(vp.clientWidth * r)), h = Math.max(1, Math.round(vp.clientHeight * r));
   if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
   if (app.view.fitted) fit();
   requestRender();
@@ -105,7 +107,7 @@ function fit() {
   requestRender();
 }
 function onePxScale(L) {
-  return (L.srcRect.h * renderer.photoSize[1] / L.imgRect.h) / (devicePixelRatio || 1);
+  return (L.srcRect.h * renderer.photoSize[1] / L.imgRect.h) / dpr();
 }
 function zoomTo(scale, cx, cy) {
   const v = app.view;
@@ -146,28 +148,49 @@ vp.addEventListener('wheel', (e) => {
   const k = e.ctrlKey ? 0.01 : 0.0015;
   zoomTo(app.view.scale * Math.exp(-e.deltaY * k), p.cx, p.cy);
 }, { passive: false });
-vp.addEventListener('dblclick', () => { if (app.photo && app.view.tool === 'hand') fit(); });
+vp.addEventListener('dblclick', () => { if (app.photo && app.view.tool === 'hand' && lastPointer === 'mouse') fit(); });
+let lastPointer = 'mouse', lastTap = { t: 0, x: 0, y: 0 }, readoutT;
+function showReadout(d) {
+  const ro = $('readout');
+  clearTimeout(readoutT);
+  if (d == null) { ro.hidden = true; showHoverLine(null); return; }
+  ro.hidden = false; ro.textContent = `distance ${d.toFixed(3)}  ·  ${d < 0.33 ? 'near' : d < 0.66 ? 'middle' : 'far'}`; showHoverLine(d);
+}
 vp.addEventListener('pointerdown', (e) => {
   if (!app.photo) return;
-  vp.focus();
+  lastPointer = e.pointerType;
+  vp.focus({ preventScroll: true });
   vp.setPointerCapture(e.pointerId);
   pointers.set(e.pointerId, artAt(e));
   if (pointers.size === 2) {
-    const [a, b] = [...pointers.values()];
-    drag = { kind: 'pinch', dist: Math.hypot(a.cx - b.cx, a.cy - b.cy), scale: app.view.scale };
+    clearTimeout(drag?.timer);
+    const [a, b] = [...pointers.values()], dist = Math.max(10, Math.hypot(a.cx - b.cx, a.cy - b.cy));
+    // pinch zooms the view; with the crop tool it zooms the crop
+    drag = app.view.tool === 'frame' ? { kind: 'cropzoom', dist, zoom: app.s.frame.zoom } : { kind: 'pinch', dist, scale: app.view.scale };
     return;
   }
-  const p = artAt(e), v = app.view;
-  if (v.mode === 3 && Math.abs(p.x - v.split * layout().artW) * v.scale < 10) { drag = { kind: 'split' }; return; }
+  if (pointers.size > 2) return;
+  const p = artAt(e), v = app.view, touch = e.pointerType !== 'mouse';
+  if (v.mode === 3 && Math.abs(p.x - v.split * layout().artW) * v.scale < (touch ? 24 : 10)) { drag = { kind: 'split' }; return; }
   const tool = e.button === 1 || e.button === 2 ? 'hand' : v.tool;
-  if (tool === 'pick') {
+  if (tool === 'pick' && touch) {
+    // touch: a tap moves the selected band, a drag scrubs through distances, a long press adds a band
+    const d = depthAtArt(p);
+    showReadout(d);
+    drag = { kind: 'pickwait', x: e.clientX, y: e.clientY, d, timer: setTimeout(() => {
+      if (drag?.kind !== 'pickwait' || drag.d == null) return;
+      pickDepth(drag.d, true); commit(); drag = { kind: 'done' };
+      navigator.vibrate?.(12);
+      toast(`Added ${selHL().name} at distance ${selHL().center.toFixed(2)}`);
+    }, 520) };
+  } else if (tool === 'pick') {
     const d = depthAtArt(p);
     if (d != null) pickDepth(d, e.shiftKey || e.altKey);
     drag = { kind: 'pick' };
   } else if (tool === 'frame') {
     drag = { kind: 'frame', p, cx: app.s.frame.cx, cy: app.s.frame.cy };
   } else {
-    drag = { kind: 'pan', x: e.clientX, y: e.clientY, ox: v.ox, oy: v.oy };
+    drag = { kind: 'pan', x: e.clientX, y: e.clientY, ox: v.ox, oy: v.oy, t0: e.timeStamp };
   }
   vp.classList.add('dragging');
 });
@@ -175,19 +198,23 @@ vp.addEventListener('pointermove', (e) => {
   if (!app.photo) return;
   const p = artAt(e);
   if (pointers.has(e.pointerId)) pointers.set(e.pointerId, p);
-  const d = depthAtArt(p);
-  const ro = $('readout');
-  if (d != null) { ro.hidden = false; ro.textContent = `distance ${d.toFixed(3)}  ·  ${d < 0.33 ? 'near' : d < 0.66 ? 'middle' : 'far'}`; showHoverLine(d); }
-  else { ro.hidden = true; showHoverLine(null); }
+  const d = depthAtArt(p), mouse = e.pointerType === 'mouse';
+  if (mouse || drag?.kind === 'pick' || drag?.kind === 'pickwait') showReadout(d);
   if (!drag) return;
   const v = app.view;
   if (drag.kind === 'pinch' && pointers.size === 2) {
     const [a, b] = [...pointers.values()];
     zoomTo(drag.scale * Math.hypot(a.cx - b.cx, a.cy - b.cy) / drag.dist, (a.cx + b.cx) / 2, (a.cy + b.cy) / 2);
+  } else if (drag.kind === 'cropzoom' && pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    app.s.frame.zoom = +clamp(drag.zoom * Math.hypot(a.cx - b.cx, a.cy - b.cy) / drag.dist, 1, 4).toFixed(4);
+    onChange('frame');
   } else if (drag.kind === 'pan') {
     v.ox = drag.ox + e.clientX - drag.x; v.oy = drag.oy + e.clientY - drag.y; v.fitted = false; requestRender();
   } else if (drag.kind === 'split') {
     v.split = clamp(p.x / layout().artW, 0, 1); requestRender();
+  } else if (drag.kind === 'pickwait') {
+    if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 8) { clearTimeout(drag.timer); drag = { kind: 'pick' }; if (!selHL() && d != null) pickDepth(d, true); }
   } else if (drag.kind === 'pick' && d != null && e.buttons) {
     const h = selHL(); if (h) { h.center = d; onChange('hl'); }
   } else if (drag.kind === 'frame') {
@@ -200,13 +227,26 @@ vp.addEventListener('pointermove', (e) => {
 });
 const endDrag = (e) => {
   pointers.delete(e.pointerId);
-  if (drag && (drag.kind === 'pick' || drag.kind === 'frame')) { commit(); renderPanel(); }
+  const touch = e.pointerType !== 'mouse';
+  if (drag?.kind === 'pickwait') {
+    clearTimeout(drag.timer);
+    if (drag.d != null && e.type === 'pointerup') { pickDepth(drag.d, false); commit(); renderPanel(); }
+  } else if (drag && (drag.kind === 'pick' || drag.kind === 'frame' || drag.kind === 'cropzoom')) { commit(); renderPanel(); }
+  else if (drag?.kind === 'pan' && touch && e.type === 'pointerup' && e.timeStamp - drag.t0 < 300 && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 10) {
+    // double tap: zoom in where tapped, or back to fit (timed by the touch events, not by when they are handled)
+    const now = e.timeStamp, r = vp.getBoundingClientRect();
+    if (now - lastTap.t < 320 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 40) {
+      if (app.view.fitted) zoomTo(app.view.scale * 2.5, e.clientX - r.left, e.clientY - r.top); else fit();
+      lastTap.t = 0;
+    } else lastTap = { t: now, x: e.clientX, y: e.clientY };
+  }
+  if (touch) readoutT = setTimeout(() => showReadout(null), 900);
   if (pointers.size < 2) drag = null;
   vp.classList.remove('dragging');
 };
 vp.addEventListener('pointerup', endDrag);
 vp.addEventListener('pointercancel', endDrag);
-vp.addEventListener('pointerleave', () => { $('readout').hidden = true; showHoverLine(null); });
+vp.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') showReadout(null); });
 vp.addEventListener('contextmenu', (e) => e.preventDefault());
 
 function pickDepth(d, add) {
@@ -226,7 +266,12 @@ function setView(m) {
   for (const b of $('viewSeg').children) b.classList.toggle('on', +b.dataset.view === m);
   requestRender();
 }
+const coarse = matchMedia('(pointer: coarse)');
 function setTool(t) {
+  if (coarse.matches && t !== app.view.tool && app.photo) {
+    if (t === 'pick') toast('Tap the photo to move the selected band to that distance. Long-press adds a new band.');
+    if (t === 'frame') toast('Drag to move the crop, pinch to zoom it.');
+  }
   app.view.tool = t;
   for (const b of $('toolSeg').children) b.classList.toggle('on', b.dataset.tool === t);
   vp.classList.toggle('pick', t === 'pick');
@@ -239,15 +284,15 @@ function togglePlay() {
   if (!app.photo) return;
   app.playing = !app.playing;
   app.playT0 = performance.now();
-  $('btnPlay').textContent = app.playing ? '■ Stop' : '▶ Animate';
+  $('btnPlay').innerHTML = app.playing ? '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor"/></svg><span>Stop</span>' : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5v14l12-7Z" fill="currentColor"/></svg><span>Animate</span>';
   $('btnPlay').classList.toggle('on', app.playing);
   requestRender();
 }
 
 // ---- depth ruler ----------------------------------------------------------------
 function drawRuler() {
-  const c = $('hist'), body = $('rulerBody'), dpr = devicePixelRatio || 1;
-  const w = Math.max(1, Math.round(body.clientWidth * dpr)), h = Math.max(1, Math.round(body.clientHeight * dpr));
+  const c = $('hist'), body = $('rulerBody'), r = dpr();
+  const w = Math.max(1, Math.round(body.clientWidth * r)), h = Math.max(1, Math.round(body.clientHeight * r));
   if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
   const ctx = c.getContext('2d');
   const b = app.s.base;
@@ -272,7 +317,7 @@ function drawRuler() {
       ctx.fillRect(x0, h - v * h * 0.92, x1 - x0, v * h * 0.92);
     }
     ctx.fillStyle = 'rgba(226,195,143,.9)';
-    for (const p of app.peaks) ctx.fillRect(Math.round(p * w) - 1, h - 5 * dpr, 2 * dpr, 5 * dpr);
+    for (const p of app.peaks) ctx.fillRect(Math.round(p * w) - 1, h - 5 * r, 2 * r, 5 * r);
   }
   renderBands();
 }
@@ -305,33 +350,76 @@ function showHoverLine(d) {
   l.hidden = false; l.style.left = (d * 100) + '%';
 }
 {
-  const rb = $('rulerBody');
-  let rd = null;
+  const rb = $('rulerBody'), rp = new Map();
+  let rd = null, lastTapT = 0, rulerPointer = 'mouse', downOnBand = false;
   const xToD = (e) => { const r = rb.getBoundingClientRect(); return clamp((e.clientX - r.left) / r.width, 0, 1); };
+  // touch: grab the nearest band, since thin bands are hard to hit with a finger
+  const bandAt = (e) => {
+    const t = e.target.closest('.band');
+    if (t) return app.s.highlighters.find((x) => x.id === t.dataset.id);
+    if (e.pointerType === 'mouse') return null;
+    const r = rb.getBoundingClientRect();
+    let best = null, bd = 28;
+    for (const h of app.s.highlighters) { const dx = Math.abs(r.left + h.center * r.width - e.clientX); if (dx < bd) { bd = dx; best = h; } }
+    return best;
+  };
   rb.addEventListener('pointerdown', (e) => {
-    const band = e.target.closest('.band');
-    if (!band) return;
-    const h = app.s.highlighters.find((x) => x.id === band.dataset.id);
-    if (!h) return;
+    if (!app.photo) return;
+    rulerPointer = e.pointerType;
     rb.setPointerCapture(e.pointerId);
-    if (app.sel !== h.id) { app.sel = h.id; renderPanel(); }
-    rd = { h, kind: e.target.classList.contains('body') || h.style === 'line' ? 'move' : 'resize', d0: xToD(e), c0: h.center };
+    rp.set(e.pointerId, e.clientX);
+    if (rp.size === 2 && rd?.h) {
+      // second finger: pinch sets the band's width (a line's thickness)
+      const [a, b] = [...rp.values()];
+      rd = { h: rd.h, kind: 'pinch', dist: Math.max(12, Math.abs(a - b)), w0: rd.h.width, t0: rd.h.thickness };
+      return;
+    }
+    if (rp.size > 1) return;
+    const h = bandAt(e);
+    downOnBand = !!h;
+    if (!h) { rd = { kind: 'empty' }; return; }
+    if (app.sel !== h.id) { app.sel = h.id; renderPanel(); renderBands(); }
+    const edge = e.pointerType === 'mouse' && e.target.closest('.band') && !e.target.classList.contains('body') && h.style !== 'line';
+    rd = { h, kind: edge ? 'resize' : 'move', d0: xToD(e), c0: h.center };
+    showHoverLine(h.center);
     e.preventDefault();
   });
   rb.addEventListener('pointermove', (e) => {
+    if (rp.has(e.pointerId)) rp.set(e.pointerId, e.clientX);
     const d = xToD(e);
-    showHoverLine(d);
-    if (!rd) return;
-    if (rd.kind === 'move') rd.h.center = clamp(rd.c0 + d - rd.d0, 0, 1);
+    if (e.pointerType === 'mouse') showHoverLine(d);
+    if (!rd || rd.kind === 'empty') return;
+    if (rd.kind === 'pinch') {
+      if (rp.size < 2) return;
+      const [a, b] = [...rp.values()], k = Math.abs(a - b) / rd.dist;
+      if (rd.h.style === 'line') rd.h.thickness = +clamp(rd.t0 * k, 0.2, 12).toFixed(3);
+      else rd.h.width = +clamp(rd.w0 * k, 0.002, 1).toFixed(4);
+    } else if (rd.kind === 'move') { rd.h.center = clamp(rd.c0 + d - rd.d0, 0, 1); showHoverLine(rd.h.center); }
     else rd.h.width = clamp(Math.abs(d - rd.h.center) * 2, 0.002, 1);
     onChange('hl');
     syncEditor();
   });
-  const up = () => { if (rd) { rd = null; commit(); renderPanel(); } };
+  const up = (e) => {
+    rp.delete(e.pointerId);
+    if (!rd) return;
+    if (rd.kind === 'empty') {
+      // double tap on free space adds a band there (mouse: dblclick)
+      if (e.pointerType !== 'mouse' && e.type === 'pointerup') {
+        const now = e.timeStamp;
+        if (now - lastTapT < 350) { pickDepth(xToD(e), true); commit(); lastTapT = 0; } else lastTapT = now;
+      }
+      rd = null;
+      return;
+    }
+    if (rp.size) return;
+    rd = null; commit(); renderPanel();
+    if (e.pointerType !== 'mouse') showHoverLine(null);
+  };
   rb.addEventListener('pointerup', up);
   rb.addEventListener('pointercancel', up);
-  rb.addEventListener('pointerleave', () => { if (!rd) showHoverLine(null); });
-  rb.addEventListener('dblclick', (e) => { if (!app.photo || e.target.closest('.band')) return; pickDepth(xToD(e), true); commit(); });
+  rb.addEventListener('pointerleave', (e) => { if (!rd && e.pointerType === 'mouse') showHoverLine(null); });
+  rb.addEventListener('dblclick', (e) => { if (!app.photo || rulerPointer !== 'mouse' || downOnBand) return; pickDepth(xToD(e), true); commit(); });
+  $('rulerTitle').textContent = coarse.matches ? 'Drag a band · pinch to change its width · double-tap to add' : 'Depth: drag the bands, double-click to add one';
 }
 
 // ---- change tracking, undo, autosave ------------------------------------------
@@ -403,7 +491,7 @@ let sigKey = '';
 async function updateSignature(targetPx) {
   const sg = app.s.signature, L = layout();
   if (!sg.on || !sg.text || !L.sigRect) { renderer.setSignature(null); sigKey = ''; requestRender(); return; }
-  const px = Math.round(clamp(targetPx || L.sigRect.h * app.view.scale * (devicePixelRatio || 1) * 1.5, 48, 1200));
+  const px = Math.round(clamp(targetPx || L.sigRect.h * app.view.scale * dpr() * 1.5, 48, 1200));
   const key = [sg.text, sg.font, sg.italic, sg.spacing, Math.round(Math.log2(px) * 4)].join('|');
   if (key === sigKey && !targetPx) { requestRender(); return; }
   sigKey = targetPx ? '' : key;
@@ -521,6 +609,9 @@ async function setPhoto(blob, name) {
   renderer.setPhoto(bm);
 }
 function showStudio() {
+  const first = document.documentElement.classList.contains('no-photo');
+  document.documentElement.classList.remove('no-photo');
+  if (first) { ui.tab = 'looks'; setSheet(true); }
   $('empty').hidden = true;
   $('projName').disabled = false;
   $('projName').value = app.project.name;
@@ -540,6 +631,7 @@ async function openPhotoFile(file) {
     await runAI();
     await refineDepth();
     app.s = applyLook(app.s, lastLook(), app.peaks);
+    app.look = lastLook().name;
     afterLoad();
     idle();
     saveProject();
@@ -579,11 +671,12 @@ async function openDemo() {
   app.s = normalize({ ...defaultSettings(), signature: app.s.signature });
   await refineDepth();
   app.s = applyLook(app.s, LOOKS.find((l) => l.name === 'Three Distances'), app.peaks);
+  app.look = 'Three Distances';
   afterLoad();
   idle();
   saveProject();
   loadLookThumbs();
-  toast('Demo loaded. Drag the bands in the depth ruler, or pick a look on the right.');
+  toast(mobile ? 'Demo loaded. Pick a look, or drag the bands in the depth ruler.' : 'Demo loaded. Drag the bands in the depth ruler, or pick a look on the right.');
 }
 
 async function openProject(id) {
@@ -599,6 +692,7 @@ async function openProject(id) {
     app.assetsDirty = { photo: false, raw: false };
     showStudio();
     app.s = normalize(p.settings);
+    app.look = null;
     await refineDepth();
     afterLoad();
     $('saveState').textContent = 'Saved';
@@ -696,7 +790,7 @@ window.addEventListener('paste', (e) => {
 window.addEventListener('keydown', (e) => {
   const tag = e.target.tagName;
   if ((tag === 'INPUT' && !['range', 'checkbox', 'radio', 'color'].includes(e.target.type)) || tag === 'TEXTAREA' || tag === 'SELECT') return;
-  if ($('exportDlg').open || $('galleryDlg').open) return;
+  if ($('exportDlg').open || $('galleryDlg').open || $('askDlg').open) return;
   const mod = e.ctrlKey || e.metaKey;
   const k = e.key.toLowerCase();
   if (mod && k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
@@ -769,11 +863,22 @@ function distribute(n) {
 }
 
 // ---- panel ------------------------------------------------------------------------------
+// phone tabs: which panel sections each one shows
+const TABS = { looks: ['looks'], bands: ['hl'], style: ['base', 'relief', 'contours', 'finish'], frame: ['frame', 'sig'], depth: ['depth', 'anim'] };
+let mobile = false;
+const ui = { tab: 'looks', open: true, h: 0.42 };
+try { Object.assign(ui, JSON.parse(localStorage.getItem('vath.ui') || '{}')); } catch { /* ignore */ }
+if (!TABS[ui.tab]) ui.tab = 'looks';
+const saveUi = () => { try { localStorage.setItem('vath.ui', JSON.stringify({ tab: ui.tab, h: ui.h })); } catch { /* ignore */ } };
 let openSecs;
 try { openSecs = new Set(JSON.parse(localStorage.getItem('vath.open') || '["looks","hl","depth","base"]')); } catch { openSecs = new Set(['looks', 'hl', 'depth', 'base']); }
 function section(id, title, build, count) {
+  // phones show one tab of the panel at a time in the bottom sheet
+  if (mobile && !TABS[ui.tab].includes(id)) return document.createComment(id);
   const d = el('details');
   d.open = openSecs.has(id);
+  if (mobile && TABS[ui.tab].length === 1) { d.classList.add('solo'); d.open = true; }
+  else if (mobile && TABS[ui.tab][0] === id) d.open = true;
   d.ontoggle = () => { d.open ? openSecs.add(id) : openSecs.delete(id); try { localStorage.setItem('vath.open', JSON.stringify([...openSecs])); } catch { /* ignore */ } };
   const s = el('summary', null, title);
   if (count != null) s.append(el('span', 'count', count));
@@ -936,7 +1041,7 @@ function renderPanel() {
       const cc = el('div', 'colors');
       color(cc, H, 'color', 'hl');
       for (const c of ['#ffffff', '#f3e3c3', '#ff2fa3', '#2fe6ff', '#ffb02f', '#c8321e', '#000000']) {
-        const s = el('button', 'ib'); s.type = 'button'; s.title = c;
+        const s = el('button', 'ib sw-btn'); s.type = 'button'; s.title = c;
         s.style.cssText = `width:18px;height:18px;border-radius:4px;background:${c};border:1px solid #444;padding:0`;
         s.onclick = () => { H().color = c; onChange('hl'); renderPanel(); commit(); };
         cc.append(s);
@@ -1043,7 +1148,7 @@ function renderPanel() {
     }
     if (F().fit !== 'contain' || asp === 'original') {
       slider(b, F, 'zoom', 'Crop zoom', { min: 1, max: 4, curve: 1.5, def: 1, kind: 'frame' });
-      b.append(el('p', 'hint', 'Use the ⬚ Crop tool (F) to drag the composition.'));
+      b.append(el('p', 'hint', coarse.matches ? 'Crop tool: drag the photo to move the crop, pinch to zoom it.' : 'Use the ⬚ Crop tool (F) to drag the composition.'));
     }
     slider(b, F, 'border', 'Border', { min: 0, max: 0.2, curve: 1.5, fmt: fmt3, def: 0, kind: 'frame', title: 'Gallery mat around the artwork, as a fraction of the short side' });
     slider(b, F, 'borderBottom', 'Extra bottom', { min: 0, max: 0.2, curve: 1.5, fmt: fmt3, def: 0, kind: 'frame', title: 'Extra space at the bottom: room for a title or signature' });
@@ -1097,7 +1202,7 @@ let userLooks = [];
 async function loadUserLooks() { try { userLooks = await store.listLooks(); } catch { userLooks = []; } }
 const lookThumbs = new Map();
 function lookTile(look, user) {
-  const b = el('button', 'look');
+  const b = el('button', 'look' + (app.look === (look.id || look.name) ? ' on' : ''));
   b.type = 'button';
   b.title = look.desc || look.name;
   const img = el('img', 'thumb');
@@ -1109,6 +1214,7 @@ function lookTile(look, user) {
   b.onclick = () => {
     app.s = user ? normalize({ ...app.s, ...look.s, frame: app.s.frame, signature: app.s.signature, anim: app.s.anim }) : applyLook(app.s, look, app.peaks);
     app.sel = app.s.highlighters[0]?.id || null;
+    app.look = look.id || look.name;
     try { if (!user) localStorage.setItem('vath.lastLook', look.name); } catch { /* ignore */ }
     recomputeHist(); renderPanel(); requestRender(); commit();
   };
@@ -1137,8 +1243,19 @@ async function loadLookThumbs() {
     if (img) img.src = url;
   }
 }
+// in-page replacement for prompt(), which desktop (Electron) builds do not support
+function askText(title, value = '') {
+  const dlg = $('askDlg'), input = $('askInput');
+  $('askTitle').textContent = title;
+  input.value = value;
+  dlg.returnValue = '';
+  for (const b of dlg.querySelectorAll('[data-close]')) b.onclick = () => dlg.close('');
+  showDialog(dlg);
+  if (!mobile) input.select();
+  return new Promise((resolve) => { dlg.onclose = () => resolve(dlg.returnValue === 'ok' ? input.value.trim() : null); });
+}
 async function saveCurrentLook() {
-  const name = prompt('Name this look:', 'My look');
+  const name = await askText('Name this look', 'My look');
   if (!name) return;
   const s = JSON.parse(snapshot());
   const look = { id: newId(), name, s: { depth: s.depth, base: s.base, relief: s.relief, contours: s.contours, finish: s.finish, highlighters: s.highlighters } };
@@ -1152,7 +1269,7 @@ async function saveCurrentLook() {
 async function openGallery() {
   if (app.project) await saveProject();
   await renderGallery();
-  $('galleryDlg').showModal();
+  showDialog($('galleryDlg'));
 }
 $('btnGallery').onclick = openGallery;
 $('galleryClose').onclick = () => $('galleryDlg').close();
@@ -1213,7 +1330,7 @@ const saveExp = () => { try { localStorage.setItem('vath.export', JSON.stringify
 function openExport() {
   if (!app.photo) return;
   renderExport();
-  $('exportDlg').showModal();
+  showDialog($('exportDlg'));
 }
 $('btnExport').onclick = openExport;
 $('exportTabs').onclick = (e) => {
@@ -1335,7 +1452,7 @@ function renderExport() {
       busy('Encoding depth map…');
       const inv = new Float32Array(app.depth.data.length);
       for (let i = 0; i < inv.length; i++) inv[i] = 1 - remap(app.depth.data[i]);
-      download(await depthToPNG(inv, app.depth.w, app.depth.h), `${fileBase()}_depth16.png`);
+      await download(await depthToPNG(inv, app.depth.w, app.depth.h), `${fileBase()}_depth16.png`);
       idle();
     });
     body.append(b1);
@@ -1343,7 +1460,7 @@ function renderExport() {
     const b2 = el('div', 'btns');
     button(b2, 'Download look (.json)', () => {
       const s = JSON.parse(snapshot());
-      download(new Blob([JSON.stringify({ name: app.project.name, app: 'Vathography Studio', settings: s }, null, 2)], { type: 'application/json' }), `${fileBase()}_look.json`);
+      download(new Blob([JSON.stringify({ name: app.project.name, app: 'Vathography Studio', settings: s }, null, 2)], { type: 'application/json' }), `${fileBase()}_look.json`).catch((e) => toast('Saving failed: ' + e.message, true));
     });
     button(b2, 'Import look…', () => $('lookInput').click());
     body.append(b2);
@@ -1373,7 +1490,7 @@ async function doExport(w, h, format, dpi, name) {
       text: { Software: 'Vathography Studio', Title: app.project.name, 'vathography:settings': snapshot() },
       onProgress: (p) => busy(`Rendering ${w.toLocaleString()} × ${h.toLocaleString()} px… ${Math.round(p * 100)}%`, p, ac),
     });
-    if (blob) download(blob, filename);
+    if (blob) await download(blob, filename);
     toast(`Exported ${filename} (${w}×${h}) in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
   } catch (e) {
     if (e.name === 'AbortError') toast('Export cancelled');
@@ -1396,7 +1513,7 @@ async function doVideo(w, h) {
     await updateSignature(app.s.signature.size / 100 * h * 1.3);
     busy('Recording video…', 0, ac);
     const blob = await recordVideo(renderer, app.s, layout(), app.s.anim, { w, h, fps: exp.fps, bitrate: w * h * exp.fps * 0.35, signal: ac.signal, onProgress: (p) => busy(`Recording video… ${Math.round(p * 100)}%`, p, ac) });
-    download(blob, `${fileBase()}_${w}x${h}.${blob.type.includes('mp4') ? 'mp4' : 'webm'}`);
+    await download(blob, `${fileBase()}_${w}x${h}.${blob.type.includes('mp4') ? 'mp4' : 'webm'}`);
     toast(blob.type.includes('mp4') ? 'Video saved (MP4)' : 'Video saved (WebM). Most platforms accept it; convert to MP4 if needed.');
   } catch (e) {
     if (e.name === 'AbortError') toast('Recording cancelled'); else { console.error(e); toast('Recording failed: ' + e.message, true); }
@@ -1421,12 +1538,116 @@ function reRefine() {
   }, 250);
 }
 
+// ---- back button: Android back (and browser back) closes the top dialog, menu or sheet ---------
+const layers = [];
+let skipPop = 0;
+function openLayer(close) { layers.push(close); history.pushState({ layer: layers.length }, ''); }
+function closedLayer(close) { const i = layers.lastIndexOf(close); if (i < 0) return; layers.splice(i, 1); skipPop++; history.back(); }
+window.addEventListener('popstate', () => { if (skipPop) { skipPop--; return; } layers.pop()?.(); });
+// Android app: the hardware back button walks back through them, then leaves the app (App plugin)
+if (window.Capacitor?.isNativePlatform?.()) window.Capacitor.addListener?.('App', 'backButton', () => { if (layers.length) history.back(); else window.Capacitor.nativePromise('App', 'minimizeApp').catch(() => {}); });
+function showDialog(dlg) {
+  dlg.showModal();
+  const close = () => dlg.close();
+  openLayer(close);
+  dlg.addEventListener('close', () => closedLayer(close), { once: true });
+}
+
+// ---- phone layout: bottom sheet with tabs ---------------------------------------------------------
+function updateSheet() {
+  $('sheet').classList.toggle('closed', mobile && !ui.open);
+  $('sheet').style.setProperty('--sheet-h', Math.round(ui.h * 100) + 'dvh');
+  for (const b of $('tabbar').children) { b.classList.toggle('on', b.dataset.tab === ui.tab); b.classList.toggle('open', ui.open); }
+}
+let sheetLayer = null;
+function setSheet(open) {
+  ui.open = open; saveUi(); updateSheet();
+  if (open && mobile && !sheetLayer) { sheetLayer = () => { sheetLayer = null; setSheet(false); }; openLayer(sheetLayer); }
+  if (!open && sheetLayer) { const l = sheetLayer; sheetLayer = null; closedLayer(l); }
+}
+$('tabbar').onclick = (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.tab === ui.tab && ui.open) { setSheet(false); return; }
+  const changed = b.dataset.tab !== ui.tab;
+  ui.tab = b.dataset.tab;
+  setSheet(true);
+  if (changed) { renderPanel(); $('panel').scrollTop = 0; }
+};
+{
+  // drag the handle to resize the sheet, flick it down to close, tap to toggle half / tall
+  const hd = $('sheetHandle');
+  let sd = null;
+  hd.addEventListener('pointerdown', (e) => { hd.setPointerCapture(e.pointerId); sd = { y: e.clientY, h: ui.h, t: performance.now() }; $('sheet').classList.add('dragging'); });
+  hd.addEventListener('pointermove', (e) => {
+    if (!sd) return;
+    ui.h = clamp(sd.h - (e.clientY - sd.y) / innerHeight, 0.12, 0.86);
+    updateSheet();
+  });
+  const end = (e) => {
+    if (!sd) return;
+    $('sheet').classList.remove('dragging');
+    const dy = e.clientY - sd.y;
+    if (Math.abs(dy) < 6) ui.h = ui.h < 0.6 ? 0.74 : 0.42;
+    else if (ui.h < 0.22 || (dy > 60 && performance.now() - sd.t < 250)) { ui.h = sd.h; setSheet(false); sd = null; return; }
+    sd = null;
+    saveUi(); updateSheet();
+  };
+  hd.addEventListener('pointerup', end);
+  hd.addEventListener('pointercancel', end);
+}
+const mq = matchMedia('(max-width: 760px), (max-height: 520px) and (pointer: coarse)'), mqLand = matchMedia('(orientation: landscape)');
+function applyMode() {
+  const m = mq.matches, root = document.documentElement;
+  root.classList.toggle('is-mobile', m);
+  root.classList.toggle('land', m && mqLand.matches);
+  if (m !== mobile) { mobile = m; renderPanel(); }
+  updateSheet();
+}
+mq.addEventListener('change', applyMode);
+mqLand.addEventListener('change', applyMode);
+
+// ---- header menu (phones) ----------------------------------------------------------------------
+const menu = $('menu');
+let menuLayer = null;
+function toggleMenu(open = menu.hidden) {
+  menu.hidden = !open;
+  $('btnMenu').setAttribute('aria-expanded', open);
+  if (open) {
+    for (const b of menu.querySelectorAll('[data-needs-photo]')) b.disabled = !app.photo;
+    menuLayer = () => { menuLayer = null; toggleMenu(false); };
+    openLayer(menuLayer);
+  } else if (menuLayer) { const l = menuLayer; menuLayer = null; closedLayer(l); }
+}
+$('btnMenu').onclick = (e) => { e.stopPropagation(); toggleMenu(); };
+document.addEventListener('pointerdown', (e) => { if (!menu.hidden && !e.target.closest('#menu, #btnMenu')) toggleMenu(false); });
+menu.onclick = (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  toggleMenu(false);
+  ({ open: () => $('fileInput').click(), gallery: openGallery, version: saveVersion, demo: openDemo, install: installApp })[b.dataset.act]?.();
+};
+let installEvt = null;
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; menu.querySelector('[data-act=install]').hidden = false; });
+async function installApp() {
+  if (!installEvt) return;
+  installEvt.prompt();
+  await installEvt.userChoice.catch(() => null);
+  installEvt = null;
+  menu.querySelector('[data-act=install]').hidden = true;
+}
+
 // ---- boot -------------------------------------------------------------------------------------
 for (const id of ['btnExport', 'btnSnapshot']) $(id).disabled = true;
 updateUndoButtons();
+applyMode();
 renderPanel();
 renderRecent();
 store.persist();
 window.addEventListener('beforeunload', () => { if (app.project) saveProject(); });
+// installable app and offline start (not inside the Android shell, which serves the files itself)
+if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol) && !window.Capacitor) navigator.serviceWorker.register('sw.js').catch((e) => console.warn('Service worker', e));
+// photos opened with the installed app from the file manager
+window.launchQueue?.setConsumer(async (p) => { const f = await p.files?.[0]?.getFile(); if (f) openPhotoFile(f); });
 // test hook
-window.__vath = { app, renderer, openDemo, openPhotoFile, exportImage: (o) => exportImage(renderer, app.s, layout(), o), layout, commit, renderPanel, importDepthMap };
+window.__vath = { app, renderer, openDemo, openPhotoFile, exportImage: (o) => exportImage(renderer, app.s, layout(), o), layout, commit, onChange, renderPanel, importDepthMap };

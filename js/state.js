@@ -58,7 +58,7 @@ const H = newHighlighter;
 export const LOOKS = [
   {
     name: 'Single Plane', desc: 'One thin slice of distance, white on black',
-    s: { base: { near: '#000000', mid: '#000000', far: '#000000' }, highlighters: [H({ name: 'Plane', center: 'auto:0', width: 0.025, feather: 0.01, detail: 0.45 })] },
+    s: { base: { near: '#000000', mid: '#000000', far: '#000000' }, highlighters: [H({ name: 'Plane', center: 'auto:main', width: 0.025, feather: 0.01, detail: 0.45 })] },
   },
   {
     name: 'Mist', desc: 'Near dark, distance pale like fog',
@@ -79,7 +79,7 @@ export const LOOKS = [
     name: 'Mist + Plane', desc: 'Atmospheric gradient with one glowing subject',
     s: {
       base: { near: '#050506', mid: '#2a2b2e', far: '#9fa0a3', midPos: 0.6, curve: 1.1, detail: 0.2 },
-      highlighters: [H({ name: 'Subject', center: 'auto:0', width: 0.035, glow: 0.25, glowRadius: 0.04, detail: 0.5 })],
+      highlighters: [H({ name: 'Subject', center: 'auto:main', width: 0.035, glow: 0.25, glowRadius: 0.04, detail: 0.5 })],
     },
   },
   {
@@ -87,7 +87,7 @@ export const LOOKS = [
     s: {
       base: { near: '#000000', mid: '#000000', far: '#000000' },
       contours: { on: true, count: 28, thickness: 0.7, opacity: 0.55, color: '#ffffff' },
-      highlighters: [H({ name: 'Subject', center: 'auto:0', width: 0.03, detail: 0.3 })],
+      highlighters: [H({ name: 'Subject', center: 'auto:main', width: 0.03, detail: 0.3 })],
     },
   },
   {
@@ -95,8 +95,8 @@ export const LOOKS = [
     s: {
       base: { near: '#000000', mid: '#000000', far: '#000000', photo: 0.08, photoSat: 0 },
       highlighters: [
-        H({ name: 'Reveal', center: 'auto:0', width: 0.06, feather: 0.025, style: 'photo', blend: 'normal', intensity: 1.05 }),
-        H({ name: 'Edge', center: 'auto:0', style: 'line', thickness: 1, color: '#ffffff', opacity: 0.7 }),
+        H({ name: 'Reveal', center: 'auto:main', width: 0.06, feather: 0.025, style: 'photo', blend: 'normal', intensity: 1.05 }),
+        H({ name: 'Edge', center: 'auto:main', style: 'line', thickness: 1, color: '#ffffff', opacity: 0.7 }),
       ],
     },
   },
@@ -117,7 +117,7 @@ export const LOOKS = [
     s: {
       base: { near: '#d8d6d1', mid: '#b9b7b2', far: '#8d8b87', detail: 0 },
       relief: { amount: 0.9, angle: 135, radius: 2 },
-      highlighters: [H({ name: 'Warm plane', center: 'auto:0', width: 0.03, color: '#ffcf8a', blend: 'multiply', detail: 0 })],
+      highlighters: [H({ name: 'Warm plane', center: 'auto:main', width: 0.03, color: '#ffcf8a', blend: 'multiply', detail: 0 })],
     },
   },
   {
@@ -133,7 +133,7 @@ export const LOOKS = [
     s: {
       base: { near: '#efe9dd', mid: '#efe9dd', far: '#efe9dd', detail: 0.08 },
       contours: { on: true, count: 32, thickness: 0.6, opacity: 0.75, color: '#4a3b2c' },
-      highlighters: [H({ name: 'Survey', center: 'auto:0', style: 'line', thickness: 2.2, color: '#c8321e', blend: 'normal' })],
+      highlighters: [H({ name: 'Survey', center: 'auto:main', style: 'line', thickness: 2.2, color: '#c8321e', blend: 'normal' })],
       finish: { grain: 0.15 },
     },
   },
@@ -143,7 +143,7 @@ export const LOOKS = [
       base: { near: '#123a6b', mid: '#0f3260', far: '#0b2a52', detail: 0.12 },
       relief: { amount: 0.25, angle: 120, radius: 2 },
       contours: { on: true, count: 20, thickness: 0.6, opacity: 0.5, color: '#dbe9ff' },
-      highlighters: [H({ name: 'Plane', center: 'auto:0', width: 0.02, color: '#ffffff', detail: 0.2 })],
+      highlighters: [H({ name: 'Plane', center: 'auto:main', width: 0.02, color: '#ffffff', detail: 0.2 })],
     },
   },
   {
@@ -171,7 +171,9 @@ export function applyLook(cur, look, peaks) {
   return s;
 }
 
+// 'auto:main' is the main subject, 'auto:k' the k-th subject plane from near to far
 export function resolveAuto(spec, peaks) {
+  if (spec === 'auto:main' && peaks?.main != null) return peaks.main;
   const k = parseInt(spec.split(':')[1], 10) || 0;
   const sorted = [...(peaks || [])].sort((a, b) => a - b);
   if (sorted.length > k) return sorted[k];

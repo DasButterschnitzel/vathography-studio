@@ -1,0 +1,13 @@
+{
+  "appId": "io.github.dasbutterschnitzel.vathography",
+  "appName": "Vathography Studio",
+  "webDir": "www",
+  "backgroundColor": "#0b0b0c",
+  "android": {
+    "allowMixedContent": false,
+    "webContentsDebuggingEnabled": false
+  },
+  "plugins": {
+    "SystemBars": { "style": "DARK" }
+  }
+}

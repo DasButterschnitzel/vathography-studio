@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Headless smoke test: demo scene, every look, highlighter editing, undo/redo,
-// every export format, gallery round trip. No network needed (the demo scene
-// has its own depth). Screenshots go to test-output/.
+// every export format, gallery round trip, saving a look, installable app and
+// offline start. No network needed (the demo scene has its own depth).
+// Screenshots go to test-output/.
 import fs from 'fs';
 import path from 'path';
 import { chromium } from 'playwright';
@@ -57,6 +58,15 @@ try {
   await page.keyboard.press('Control+Shift+z');
   const redone = (await st()).c[0];
   check(moved !== undone && redone === moved, 'ruler drag, undo and redo');
+  const nBands = (await st()).n;
+  const b2 = await page.locator('.band').first().boundingBox();
+  await page.mouse.dblclick(b2.x + b2.width / 2, b2.y + 30);
+  check((await st()).n === nBands, 'double-click on a band does not add another');
+  const rr = await page.locator('#rulerBody').boundingBox();
+  await page.mouse.move(rr.x + 4, rr.y + 20); await page.mouse.down(); await page.mouse.move(rr.x + 4, rr.y - 60); await page.mouse.up();
+  const b3 = await page.locator('.band').first().boundingBox(), c3 = (await st()).c[0];
+  await page.mouse.move(b3.x + b3.width / 2, b3.y + 30); await page.mouse.down(); await page.mouse.move(b3.x + b3.width / 2 + 30, b3.y + 30, { steps: 3 }); await page.mouse.up();
+  check((await st()).c[0] !== c3, 'ruler still drags after a press released outside it');
 
   // exports
   const res = await page.evaluate(async () => {
@@ -94,6 +104,32 @@ try {
   for (const t of ['print', 'social', 'custom', 'video', 'extras']) await page.click(`#exportTabs button[data-tab="${t}"]`);
   check(true, 'export dialog tabs render');
   await page.screenshot({ path: path.join(OUT, 'export.png') });
+  await page.keyboard.press('Escape');
+
+  // save a look through the name dialog (prompt() does not exist in the desktop app)
+  await page.click('button:has-text("Save current as look")');
+  await page.fill('#askInput', 'Smoke look');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(600);
+  check(await page.locator('.look', { hasText: 'Smoke look' }).count() === 1, 'save current as look');
+
+  // installable web app: manifest with PNG icons, service worker, offline start
+  const pwa = await page.evaluate(async () => {
+    const m = await (await fetch(document.querySelector('link[rel=manifest]').href)).json();
+    const icons = await Promise.all(m.icons.map(async (i) => (await fetch(i.src)).ok));
+    const reg = await Promise.race([navigator.serviceWorker.ready, new Promise((r) => setTimeout(r, 10000))]);
+    return { name: m.name, display: m.display, big: m.icons.some((i) => i.sizes === '512x512'), icons: icons.every(Boolean), sw: !!reg?.active };
+  });
+  check(pwa.name && pwa.display === 'standalone' && pwa.big && pwa.icons, 'web app manifest and icons');
+  check(pwa.sw, 'service worker active');
+  await page.context().setOffline(true);
+  await page.reload();
+  await page.waitForFunction(() => window.__vath, null, { timeout: 20000 });
+  await page.click('#btnGallery');
+  await page.locator('.card .btn:has-text("Open")').first().click();
+  await ready();
+  check(await page.evaluate(() => !!__vath.app.depth), 'starts and opens an artwork offline');
+  await page.context().setOffline(false);
 } catch (e) {
   check(false, 'unexpected: ' + e.message);
 } finally {

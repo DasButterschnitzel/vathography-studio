@@ -1,0 +1,55 @@
+{
+  "name": "vathography-studio-desktop",
+  "productName": "Vathography Studio",
+  "version": "1.1.0",
+  "description": "Vathography Studio as a desktop app.",
+  "author": "Vathography Studio",
+  "private": true,
+  "main": "main.cjs",
+  "scripts": {
+    "web": "node ../copy-web.mjs www",
+    "start": "npm run web && electron .",
+    "dist:win": "npm run web && electron-builder --win nsis portable --x64 --publish never",
+    "dist:linux": "npm run web && electron-builder --linux AppImage --x64 --publish never",
+    "dist:mac": "npm run web && electron-builder --mac dmg --publish never"
+  },
+  "devDependencies": {
+    "electron": "44.5.1",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "io.github.dasbutterschnitzel.vathography",
+    "productName": "Vathography Studio",
+    "files": [
+      "main.cjs",
+      "www/**/*"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "icon": "www/icons/icon-512.png",
+    "win": {
+      "artifactName": "Vathography-Studio-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "Vathography Studio"
+    },
+    "portable": {
+      "artifactName": "Vathography-Studio-Portable.${ext}"
+    },
+    "linux": {
+      "category": "Graphics",
+      "artifactName": "Vathography-Studio.${ext}",
+      "executableName": "vathography-studio"
+    },
+    "mac": {
+      "category": "public.app-category.photography",
+      "artifactName": "Vathography-Studio.${ext}"
+    },
+    "publish": null
+  },
+  "repository": "https://github.com/DasButterschnitzel/vathography-studio"
+}

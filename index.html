@@ -1,12 +1,17 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="no-photo">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>Vathography Studio</title>
 <meta name="description" content="Turn photographs into vathographs: artworks drawn from the depth of a scene, with multiple depth highlighters, print-ready exports and social formats.">
 <meta name="theme-color" content="#0b0b0c">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Vathography">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&family=Inter:wght@400;500;600&family=Playfair+Display:ital@0;1&family=Space+Grotesk:wght@400;500&family=Caveat&display=swap" rel="stylesheet">
@@ -14,18 +19,26 @@
 </head>
 <body>
 <header class="top">
+  <button id="btnMenu" class="btn icon menu-btn" aria-label="Menu" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
   <div class="brand" title="Vathography: from Greek βάθος, depth">Vathography <em>Studio</em></div>
   <input id="projName" class="proj-name" spellcheck="false" placeholder="Untitled" aria-label="Artwork name" disabled>
   <span id="saveState" class="save-state"></span>
   <nav class="actions">
-    <button id="btnOpen" class="btn" title="Open a photo (O)">Open photo</button>
-    <button id="btnGallery" class="btn" title="Your saved artworks (G)">Gallery</button>
-    <span class="sep"></span>
-    <button id="btnUndo" class="btn icon" title="Undo (Ctrl+Z)" aria-label="Undo">↶</button>
-    <button id="btnRedo" class="btn icon" title="Redo (Ctrl+Shift+Z)" aria-label="Redo">↷</button>
-    <button id="btnSnapshot" class="btn" title="Save a copy as a new version (Ctrl+S)">Save version</button>
+    <button id="btnOpen" class="btn wide-only" title="Open a photo (O)">Open photo</button>
+    <button id="btnGallery" class="btn wide-only" title="Your saved artworks (G)">Gallery</button>
+    <span class="sep wide-only"></span>
+    <button id="btnUndo" class="btn icon" title="Undo (Ctrl+Z)" aria-label="Undo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg></button>
+    <button id="btnRedo" class="btn icon" title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg></button>
+    <button id="btnSnapshot" class="btn wide-only" title="Save a copy as a new version (Ctrl+S)">Save version</button>
     <button id="btnExport" class="btn primary" title="Export for print, social or video (Ctrl+E)">Export</button>
   </nav>
+  <div id="menu" class="menu" role="menu" hidden>
+    <button role="menuitem" data-act="open"><svg viewBox="0 0 24 24"><path d="M4 19V7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"/></svg>Open photo</button>
+    <button role="menuitem" data-act="gallery"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>Gallery</button>
+    <button role="menuitem" data-act="version" data-needs-photo><svg viewBox="0 0 24 24"><path d="M8 4h8l4 4v10a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/><path d="M12 10v6M9 13h6"/></svg>Save as new version</button>
+    <button role="menuitem" data-act="demo"><svg viewBox="0 0 24 24"><path d="M3 18c4-3 7-4 9-4s5 1 9 4M3 12c4-3 7-4 9-4s5 1 9 4"/></svg>Demo scene</button>
+    <button role="menuitem" data-act="install" hidden><svg viewBox="0 0 24 24"><path d="M12 4v11m-4-4 4 4 4-4M5 20h14"/></svg>Install app</button>
+  </div>
   <input id="fileInput" type="file" accept="image/*" hidden>
   <input id="depthInput" type="file" accept="image/png,image/*" hidden>
   <input id="lookInput" type="file" accept="application/json,.json" hidden>
@@ -38,13 +51,14 @@
       <div id="readout" class="readout" hidden></div>
       <div id="empty" class="empty">
         <div class="empty-card">
+          <svg class="empty-mark" viewBox="0 0 64 64" aria-hidden="true"><path d="M8 44c10-6 18-8 24-8s14 2 24 8" stroke="#3a3a3e" stroke-width="3"/><path d="M8 34c10-6 18-8 24-8s14 2 24 8" stroke="#f3efe6" stroke-width="3.5"/><path d="M8 24c10-6 18-8 24-8s14 2 24 8" stroke="#5a5a5f" stroke-width="3"/></svg>
           <h1>Draw with distance.</h1>
-          <p>Vathography turns the hidden depth of a photograph into the artwork itself. Drop a photo here: an AI model estimates how far away every point is, then you choose which distances light up.</p>
+          <p>Vathography turns the hidden depth of a photograph into the artwork itself. An AI model estimates how far away every point is; then you choose which distances light up.</p>
           <div class="empty-actions">
             <button id="emptyOpen" class="btn primary big">Open a photo</button>
             <button id="emptyDemo" class="btn big">Try the demo scene</button>
           </div>
-          <p class="small">Everything runs on your device. Photos never leave your computer. JPEG, PNG, WebP, AVIF.</p>
+          <p class="small">Everything runs on your device. Photos never leave it. JPEG, PNG, WebP, AVIF.</p>
           <div id="recent" class="recent"></div>
         </div>
       </div>
@@ -58,19 +72,19 @@
         <button data-view="3" title="Before / after split (C)">Split</button>
       </div>
       <div class="seg" id="toolSeg" aria-label="Tool">
-        <button data-tool="hand" class="on" title="Pan and zoom (H)">✋ Pan</button>
-        <button data-tool="pick" title="Click the photo to place the selected highlighter at that distance; Shift+click adds a new one (P)">◎ Pick distance</button>
-        <button data-tool="frame" title="Drag to move the crop inside the frame (F)">⬚ Crop</button>
+        <button data-tool="hand" class="on" title="Pan and zoom (H)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18M12 3l-3 3m3-3 3 3M12 21l-3-3m3 3 3-3M3 12l3-3m-3 3 3 3m15-3-3-3m3 3-3 3"/></svg><span>Move</span></button>
+        <button data-tool="pick" title="Tap the photo to move the selected highlighter to that distance; Shift+click (or long-press) adds a new one (P)"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/></svg><span>Pick distance</span></button>
+        <button data-tool="frame" title="Drag to move the crop inside the frame; pinch to zoom the crop (F)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v14h14M3 7h14v14"/></svg><span>Crop</span></button>
       </div>
       <div class="seg">
-        <button id="zoomFit" title="Fit (0)">Fit</button>
-        <button id="zoom100" title="1:1 photo pixels (1)">1:1</button>
-        <span id="zoomLabel" class="zoom-label">—</span>
+        <button id="zoomFit" title="Fit (0)" aria-label="Fit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><span>Fit</span></button>
+        <button id="zoom100" class="wide-only" title="1:1 photo pixels (1)">1:1</button>
+        <span id="zoomLabel" class="zoom-label wide-only">—</span>
       </div>
-      <button id="btnPlay" class="btn small-btn" title="Preview animation (Space)">▶ Animate</button>
+      <button id="btnPlay" class="btn small-btn" title="Preview animation (Space)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5v14l12-7Z" fill="currentColor"/></svg><span>Animate</span></button>
     </div>
     <div class="ruler" id="ruler">
-      <div class="ruler-head"><span>near</span><span class="ruler-title">Depth: drag the bands, double-click to add one</span><span>far</span></div>
+      <div class="ruler-head"><span>near</span><span class="ruler-title" id="rulerTitle">Depth: drag the bands, double-click to add one</span><span>far</span></div>
       <div class="ruler-body" id="rulerBody">
         <canvas id="hist"></canvas>
         <div id="bands" class="bands"></div>
@@ -79,7 +93,17 @@
     </div>
   </section>
 
-  <aside class="panel" id="panel" aria-label="Controls"></aside>
+  <div class="sheet" id="sheet">
+    <div class="sheet-handle" id="sheetHandle" aria-hidden="true"><span></span></div>
+    <aside class="panel" id="panel" aria-label="Controls"></aside>
+  </div>
+  <nav class="tabbar" id="tabbar" aria-label="Controls">
+    <button data-tab="looks"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg><span>Looks</span></button>
+    <button data-tab="bands"><svg viewBox="0 0 24 24"><path d="M3 20V4M21 20V4"/><rect x="8" y="4" width="3" height="16" rx="1"/><rect x="14" y="4" width="2" height="16" rx="1"/></svg><span>Bands</span></button>
+    <button data-tab="style"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16Z" fill="currentColor"/></svg><span>Style</span></button>
+    <button data-tab="frame"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="1.5"/><rect x="7" y="8" width="10" height="8"/></svg><span>Frame</span></button>
+    <button data-tab="depth"><svg viewBox="0 0 24 24"><path d="M3 18c4-3 7-4 9-4s5 1 9 4M3 12c4-3 7-4 9-4s5 1 9 4M3 6c4-3 7-4 9-4s5 1 9 4" transform="translate(0 1)"/></svg><span>Depth</span></button>
+  </nav>
 </main>
 
 <dialog id="exportDlg" class="dlg wide">
@@ -101,6 +125,16 @@
     <header><h2>Gallery</h2><span id="usage" class="muted"></span><button class="x" id="galleryClose" aria-label="Close">×</button></header>
     <div id="galleryGrid" class="gallery"></div>
   </div>
+</dialog>
+
+<dialog id="askDlg" class="dlg narrow">
+  <form method="dialog" class="dlg-inner">
+    <header><h2 id="askTitle">Name</h2><button type="button" class="x" data-close aria-label="Close">×</button></header>
+    <div class="tab-body">
+      <input id="askInput" class="ask-input" required spellcheck="false" autocomplete="off">
+      <div class="dlg-actions"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary" value="ok">Save</button></div>
+    </div>
+  </form>
 </dialog>
 
 <div id="busy" class="busy" hidden>
