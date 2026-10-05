@@ -1,6 +1,6 @@
 {
   "name": "vathography-studio-android",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Vathography Studio as an Android app (Capacitor).",
   "scripts": {
@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@capacitor/android": "8.5.2",
+    "@capacitor/app": "8.1.2",
     "@capacitor/core": "8.5.2",
     "@capacitor/filesystem": "8.1.4",
     "@capacitor/share": "8.0.3"

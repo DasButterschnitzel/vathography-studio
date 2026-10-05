@@ -81,6 +81,21 @@ python tools/marigold_depth.py photo.jpg --ensemble 10 --res 1024
 
 Then use **Depth ▸ Import depth map…** (or drop `photo_depth16.png` onto the studio). Depth maps from other tools work too: 8 or 16-bit PNG, white = near. If near and far come out swapped, use **Invert**.
 
+## On a phone or tablet
+
+On a phone the studio switches to a touch layout: the artwork on top, the depth ruler under it, and a bottom sheet with five tabs (**Looks**, **Bands**, **Style**, **Frame**, **Depth**). Tap the active tab to hide the sheet and see the artwork large; drag the sheet's handle to make it taller. Turn the phone sideways and the controls move to the right. The ☰ menu has Open photo, Gallery, Save as new version and the demo scene. The back button closes dialogs, the menu and the sheet.
+
+| Gesture | Where | Action |
+| --- | --- | --- |
+| Pinch / drag | artwork | Zoom / pan |
+| Double tap | artwork | Zoom in there, or back to fit |
+| Tap / drag | artwork, ◎ pick tool | Move the selected band to that distance / scrub through distances |
+| Long press | artwork, ◎ pick tool | Add a new band at that distance |
+| Drag / pinch | artwork, ⬚ crop tool | Move / zoom the crop |
+| Drag | depth ruler | Move the band nearest to your finger |
+| Pinch | depth ruler | Change that band's width (a line's thickness) |
+| Double tap | depth ruler, free space | Add a band there |
+
 ## Shortcuts
 
 | Key | Action |

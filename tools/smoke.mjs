@@ -58,6 +58,15 @@ try {
   await page.keyboard.press('Control+Shift+z');
   const redone = (await st()).c[0];
   check(moved !== undone && redone === moved, 'ruler drag, undo and redo');
+  const nBands = (await st()).n;
+  const b2 = await page.locator('.band').first().boundingBox();
+  await page.mouse.dblclick(b2.x + b2.width / 2, b2.y + 30);
+  check((await st()).n === nBands, 'double-click on a band does not add another');
+  const rr = await page.locator('#rulerBody').boundingBox();
+  await page.mouse.move(rr.x + 4, rr.y + 20); await page.mouse.down(); await page.mouse.move(rr.x + 4, rr.y - 60); await page.mouse.up();
+  const b3 = await page.locator('.band').first().boundingBox(), c3 = (await st()).c[0];
+  await page.mouse.move(b3.x + b3.width / 2, b3.y + 30); await page.mouse.down(); await page.mouse.move(b3.x + b3.width / 2 + 30, b3.y + 30, { steps: 3 }); await page.mouse.up();
+  check((await st()).c[0] !== c3, 'ruler still drags after a press released outside it');
 
   // exports
   const res = await page.evaluate(async () => {

@@ -2,7 +2,7 @@
 // The app's own files are network-first (an update shows on the next reload),
 // pinned CDN files (AI runtime, fonts) cache-first. The depth model is cached by
 // transformers.js itself, so Hugging Face requests pass through untouched.
-const CACHE = 'vath-v1';
+const CACHE = 'vath-v2';
 const SHELL = ['./', 'index.html', 'styles.css', 'icon.svg', 'manifest.webmanifest', 'js/app.js', 'js/renderer.js', 'js/state.js', 'js/layout.js', 'js/depth.js', 'js/refine.worker.js', 'js/analysis.js', 'js/codecs.js', 'js/export.js', 'js/store.js', 'js/demo.js'];
 const CDN = /^https:\/\/(cdn\.jsdelivr\.net|fonts\.googleapis\.com|fonts\.gstatic\.com)\//;
 
